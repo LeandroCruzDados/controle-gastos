@@ -1,0 +1,21 @@
+{
+  "name": "Controle de Gastos",
+  "short_name": "Gastos",
+  "description": "Dashboard financeiro familiar com lançamentos, cartões, previsões e insights.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#111321",
+  "theme_color": "#b8ff00",
+  "lang": "pt-BR",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
