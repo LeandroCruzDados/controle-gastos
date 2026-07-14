@@ -27,7 +27,26 @@ type DbTransaction = {
 };
 
 export async function ensureHousehold(user: User) {
-  if (!supabase) throw new Error("Supabase não configurado.");
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data: existing, error: memberError } = await supabase
+    .from("household_members")
+    .select("household_id")
+    .eq("user_id", user.id);
+
+  if (memberError) throw memberError;
+  const existingHouseholdIds = (existing ?? []).map((item) => item.household_id as string);
+  if (existingHouseholdIds.length) {
+    const { data: latestTransaction } = await supabase
+      .from("transactions")
+      .select("household_id")
+      .in("household_id", existingHouseholdIds)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    return (latestTransaction?.household_id as string | undefined) ?? existingHouseholdIds[0];
+  }
 
   const { error: householdError } = await supabase
     .from("households")
@@ -44,7 +63,7 @@ export async function ensureHousehold(user: User) {
 }
 
 export async function fetchTransactions(householdId: string) {
-  if (!supabase) throw new Error("Supabase não configurado.");
+  if (!supabase) throw new Error("Supabase nao configurado.");
 
   const { data, error } = await supabase
     .from("transactions")
@@ -55,16 +74,6 @@ export async function fetchTransactions(householdId: string) {
 
   if (error) throw error;
   return (data ?? []).map(fromDbTransaction);
-}
-
-export async function saveTransaction(item: Transaction, householdId: string, user: User) {
-  if (!supabase) throw new Error("Supabase não configurado.");
-
-  const { error } = await supabase
-    .from("transactions")
-    .upsert(toDbTransaction(item, householdId, user.id), { onConflict: "id" });
-
-  if (error) throw error;
 }
 
 export async function saveTransactions(items: Transaction[], householdId: string, user: User) {
@@ -78,17 +87,13 @@ export async function saveTransactions(items: Transaction[], householdId: string
 }
 
 export async function deleteTransaction(id: string) {
-  if (!supabase) throw new Error("Supabase não configurado.");
+  if (!supabase) throw new Error("Supabase nao configurado.");
 
   const { error } = await supabase.from("transactions").delete().eq("id", id);
   if (error) throw error;
 }
 
 export async function replaceTransactions(items: Transaction[], householdId: string, user: User) {
-  if (!supabase) throw new Error("Supabase não configurado.");
-
-  const { error: deleteError } = await supabase.from("transactions").delete().eq("household_id", householdId);
-  if (deleteError) throw deleteError;
   await saveTransactions(items, householdId, user);
 }
 
@@ -107,7 +112,7 @@ function toDbTransaction(item: Transaction, householdId: string, userId: string)
     type: item.tipo,
     amount: item.valor,
     account: item.conta || "Carteira",
-    payment_method: item.formaPagamento || "Não informado",
+    payment_method: item.formaPagamento || "Nao informado",
     notes: item.observacoes || null,
     source,
     card_name: cardName,

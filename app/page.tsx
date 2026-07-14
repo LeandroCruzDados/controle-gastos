@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { ArrowDownRight, ArrowUpRight, Bot, CreditCard, Moon, Plus, Search, Sun, Trash2, Wallet } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { answerQuestion, applyFilters, currency, generateInsights, groupBy, monthlyFlow, runningBalance, summarize } from "@/lib/finance";
-import { deleteTransaction, ensureHousehold, fetchTransactions, replaceTransactions, saveTransaction, saveTransactions } from "@/lib/supabase-storage";
+import { deleteTransaction, ensureHousehold, fetchTransactions, replaceTransactions, saveTransactions } from "@/lib/supabase-storage";
 import { supabase } from "@/lib/supabase";
 import type { Filters, Insight, Transaction, TransactionType } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
@@ -110,8 +110,14 @@ export default function Home() {
 
         setHouseholdId(household);
         const localItems = readLocalTransactions();
-        const migrationKey = `finance-supabase-migrated-${currentUser.id}`;
-        const shouldMigrate = cloudItems.length === 0 && localItems.length > 0 && localStorage.getItem(migrationKey) !== "true";
+        const mergedItems = mergeTransactions(localItems, cloudItems);
+        if (mergedItems.length > cloudItems.length) {
+          await saveTransactions(mergedItems, household, currentUser);
+        }
+        setTransactions(mergedItems);
+        localStorage.setItem("finance-transactions", JSON.stringify(mergedItems));
+        setFileStatus(`${mergedItems.length} lancamentos carregados e protegidos.`);
+        /*
 
         if (shouldMigrate) {
           await saveTransactions(localItems, household, currentUser);
@@ -123,6 +129,7 @@ export default function Home() {
           localStorage.setItem("finance-transactions", JSON.stringify(cloudItems));
           setFileStatus(`${cloudItems.length} lançamentos carregados do Supabase.`);
         }
+        */
 
         setActiveUser(currentUser.email ?? "Eu");
         setForm((current) => ({ ...current, criadoPor: currentUser.email ?? "Eu" }));
@@ -795,6 +802,14 @@ function readLocalTransactions() {
   } catch {
     return [];
   }
+}
+
+function mergeTransactions(localItems: Transaction[], cloudItems: Transaction[]) {
+  const merged = new Map<string, Transaction>();
+  [...cloudItems, ...localItems].forEach((item) => {
+    merged.set(item.id, item);
+  });
+  return Array.from(merged.values()).sort((a, b) => b.data.localeCompare(a.data));
 }
 
 function isManualForecastSource(item: Transaction) {
