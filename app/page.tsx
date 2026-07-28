@@ -214,6 +214,7 @@ export default function Home() {
     localStorage.setItem("finance-transactions", JSON.stringify(next));
     setFileStatus(message);
     syncCloud(next);
+    checkBalanceAlert(next);
   }
 
   async function syncCloud(next: Transaction[]) {
@@ -224,6 +225,44 @@ export default function Home() {
     } catch (error) {
       const detail = error instanceof Error ? error.message : "erro desconhecido";
       setAuthStatus(`Salvei neste navegador, mas falhou na nuvem: ${detail}`);
+    }
+  }
+
+  async function checkBalanceAlert(next: Transaction[]) {
+    if (!supabase || !authUser) return;
+
+    const balance = summarize(next).balance;
+    const level = balance <= 0 ? "zero" : balance <= 50 ? "low" : null;
+    if (!level) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const alertKey = `finance-whatsapp-alert-${level}-${today}`;
+    if (localStorage.getItem(alertKey) === "true") return;
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+
+    try {
+      const response = await fetch("/api/whatsapp-alert", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ balance, level, userEmail: authUser.email })
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result?.error ?? "Falha ao enviar WhatsApp.");
+      }
+
+      localStorage.setItem(alertKey, "true");
+      setAuthStatus(`Alerta de saldo enviado via WhatsApp: ${currency.format(balance)}.`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "erro desconhecido";
+      setAuthStatus(`Saldo baixo detectado, mas o WhatsApp falhou: ${detail}`);
     }
   }
 
