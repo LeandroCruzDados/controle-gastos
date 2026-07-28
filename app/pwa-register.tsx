@@ -7,7 +7,9 @@ export function PWARegister() {
     if (!("serviceWorker" in navigator)) return;
     if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") return;
 
-    navigator.serviceWorker.register("/sw.js").catch(() => {
+    navigator.serviceWorker.register("/sw.js").then((registration) => {
+      registration.update();
+    }).catch(() => {
       // O app continua funcionando mesmo se o navegador bloquear o service worker.
     });
   }, []);
