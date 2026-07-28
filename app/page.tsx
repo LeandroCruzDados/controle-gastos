@@ -22,7 +22,7 @@ export default function Home() {
     const parsed = JSON.parse(saved) as Transaction[];
     const restored = restoreKnownManualTransactionsIfEmpty(parsed);
     if (restored.length !== parsed.length) {
-      localStorage.setItem("finance-transactions", JSON.stringify(restored));
+      writeLocalTransactions(restored);
       localStorage.setItem("finance-restored-manuals", "true");
     }
     return restored;
@@ -115,7 +115,7 @@ export default function Home() {
           await saveTransactions(mergedItems, household, currentUser);
         }
         setTransactions(mergedItems);
-        localStorage.setItem("finance-transactions", JSON.stringify(mergedItems));
+        writeLocalTransactions(mergedItems);
         setFileStatus(`${mergedItems.length} lancamentos carregados e protegidos.`);
         /*
 
@@ -211,7 +211,7 @@ export default function Home() {
   const payments = unique(transactions.map((t) => t.formaPagamento));
   function persist(next: Transaction[], message = `${next.length} lançamentos salvos.`) {
     setTransactions(next);
-    localStorage.setItem("finance-transactions", JSON.stringify(next));
+    writeLocalTransactions(next);
     setFileStatus(message);
     syncCloud(next);
     checkBalanceAlert(next);
@@ -223,7 +223,7 @@ export default function Home() {
       await replaceTransactions(next, householdId, authUser);
       setAuthStatus(`Sincronizado na nuvem como ${authUser.email}.`);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "erro desconhecido";
+      const detail = getErrorMessage(error);
       setAuthStatus(`Salvei neste navegador, mas falhou na nuvem: ${detail}`);
     }
   }
@@ -312,6 +312,11 @@ export default function Home() {
     const importedCount = transactions.filter((item) => item.importBatchId).length;
     const next = transactions.filter((item) => !item.importBatchId);
     persist(next, `${importedCount} lançamentos importados removidos. Lançamentos manuais preservados.`);
+  }
+
+  function restoreBaseData() {
+    const next = mergeTransactions(transactions, getKnownManualTransactions());
+    persist(next, "Lancamentos base restaurados. Confira os valores antes de continuar.");
   }
 
   function addTransaction(event: FormEvent) {
@@ -567,6 +572,7 @@ export default function Home() {
               </select>
             </label>
             <button className="ghost" onClick={clearImportedData}>Limpar importados</button>
+            <button className="ghost" onClick={restoreBaseData}>Restaurar base</button>
             {authUser && <button className="ghost" onClick={testWhatsAppAlert}>Testar WhatsApp</button>}
             {authUser && <button className="ghost" onClick={signOut}>Sair</button>}
             <button className="ghost" onClick={() => setLight((value) => !value)}>{light ? <Moon size={17} /> : <Sun size={17} />} Tema</button>
@@ -873,10 +879,25 @@ function readLocalTransactions() {
   if (typeof window === "undefined") return [];
   try {
     const saved = localStorage.getItem("finance-transactions");
-    if (!saved) return [];
-    return restoreKnownManualTransactionsIfEmpty(JSON.parse(saved) as Transaction[]);
+    const backup = localStorage.getItem("finance-transactions-backup");
+    const source = saved && saved !== "[]" ? saved : backup;
+    if (!source) return [];
+    return restoreKnownManualTransactionsIfEmpty(JSON.parse(source) as Transaction[]);
   } catch {
     return [];
+  }
+}
+
+function writeLocalTransactions(next: Transaction[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const current = localStorage.getItem("finance-transactions");
+    if (current && current !== "[]") {
+      localStorage.setItem("finance-transactions-backup", current);
+    }
+    localStorage.setItem("finance-transactions", JSON.stringify(next));
+  } catch {
+    localStorage.setItem("finance-transactions", JSON.stringify(next));
   }
 }
 
@@ -982,6 +1003,34 @@ function getCardName(item: Transaction) {
   const text = `${item.subcategoria} ${item.conta} ${item.formaPagamento} ${item.categoria}`.toLowerCase();
   if (text.includes("santander")) return "Santander";
   return "Nubank";
+}
+
+function getKnownManualTransactions() {
+  return [
+    ["Salário", "Receita", "Receitas", "Conta corrente", "Pix", 3728],
+    ["Internet", "Despesa Fixa", "Casa", "Conta corrente", "Débito", 139.9],
+    ["Tarifas do banco", "Despesa", "Banco", "Conta corrente", "Débito", 16.85],
+    ["Cemitério", "Despesa", "Família", "Conta corrente", "Débito", 94],
+    ["Netflix", "Despesa Fixa", "Streaming", "Conta corrente", "Débito", 57.8],
+    ["Condomínio/água", "Despesa Fixa", "Moradia", "Conta corrente", "Débito", 477.95],
+    ["Dízimo", "Despesa", "Doações", "Conta corrente", "Débito", 50],
+    ["CNPJ", "Despesa", "Trabalho", "Conta corrente", "Débito", 86.05],
+    ["Passagem", "Despesa", "Transporte", "Conta corrente", "Débito", 88],
+    ["IPTU", "Despesa", "Moradia", "Conta corrente", "Débito", 93.52],
+    ["Ração", "Despesa", "Pet", "Conta corrente", "Débito", 58]
+  ].map(([descricao, tipo, categoria, conta, formaPagamento, valor]) => ({
+    id: `restored-${String(descricao).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    data: "2026-07-09",
+    descricao: String(descricao),
+    categoria: String(categoria),
+    subcategoria: "",
+    tipo: tipo as TransactionType,
+    valor: Number(valor),
+    conta: String(conta),
+    formaPagamento: String(formaPagamento),
+    observacoes: "Restaurado apos separacao do cartao de credito",
+    criadoPor: "Sistema"
+  }));
 }
 
 function restoreKnownManualTransactionsIfEmpty(transactions: Transaction[]) {
