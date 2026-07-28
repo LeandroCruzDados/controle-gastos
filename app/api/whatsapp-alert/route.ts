@@ -1,4 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 type AlertPayload = {
@@ -14,29 +13,6 @@ const currency = new Intl.NumberFormat("pt-BR", {
 });
 
 export async function POST(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.replace(/^Bearer\s+/i, "");
-
-  if (!token) {
-    return NextResponse.json({ error: "Login obrigatorio para enviar alertas." }, { status: 401 });
-  }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return NextResponse.json({ error: "Supabase nao configurado." }, { status: 500 });
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } }
-  });
-  const { data, error } = await supabase.auth.getUser(token);
-
-  if (error || !data.user) {
-    return NextResponse.json({ error: "Sessao invalida." }, { status: 401 });
-  }
-
   const { balance, level, userEmail, test } = (await request.json()) as AlertPayload;
 
   if (!Number.isFinite(balance) || !["low", "zero"].includes(level)) {
@@ -61,7 +37,7 @@ export async function POST(request: Request) {
     : `${title}\n` +
       `Seu saldo chegou a ${currency.format(balance)}.\n` +
       `${level === "zero" ? "A conta chegou a zero ou ficou negativa." : "A conta chegou a R$ 50,00 ou menos."}\n` +
-      `Lancamento feito por: ${userEmail || data.user.email || "usuario logado"}.`;
+      `Lancamento feito por: ${userEmail || "dashboard"}.`;
 
   const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
   const authorization = Buffer.from(`${accountSid}:${authToken}`).toString("base64");

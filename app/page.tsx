@@ -229,8 +229,6 @@ export default function Home() {
   }
 
   async function checkBalanceAlert(next: Transaction[]) {
-    if (!supabase || !authUser) return;
-
     const balance = summarize(next).balance;
     const level = balance <= 0 ? "zero" : balance <= 50 ? "low" : null;
     if (!level) return;
@@ -239,18 +237,13 @@ export default function Home() {
     const alertKey = `finance-whatsapp-alert-${level}-${today}`;
     if (localStorage.getItem(alertKey) === "true") return;
 
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-
     try {
       const response = await fetch("/api/whatsapp-alert", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ balance, level, userEmail: authUser.email })
+        body: JSON.stringify({ balance, level, userEmail: authUser?.email ?? activeUser })
       });
 
       if (!response.ok) {
@@ -267,27 +260,14 @@ export default function Home() {
   }
 
   async function testWhatsAppAlert() {
-    if (!supabase || !authUser) {
-      setAuthStatus("Entre na conta antes de testar o WhatsApp.");
-      return;
-    }
-
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) {
-      setAuthStatus("Sessao expirada. Saia e entre novamente antes de testar o WhatsApp.");
-      return;
-    }
-
     try {
       setAuthStatus("Enviando teste de WhatsApp...");
       const response = await fetch("/api/whatsapp-alert", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ balance: summarize(transactions).balance, level: "low", userEmail: authUser.email, test: true })
+        body: JSON.stringify({ balance: summarize(transactions).balance, level: "low", userEmail: authUser?.email ?? activeUser, test: true })
       });
 
       const result = await response.json().catch(() => ({}));
@@ -580,7 +560,7 @@ export default function Home() {
         </header>
 
         <p className="status">{fileStatus}</p>
-        {authUser && <p className="cloud-status">{authStatus}</p>}
+        {authStatus && <p className="cloud-status">{authStatus}</p>}
 
         <section className="metrics">
           <Metric title="Saldo atual" value={currency.format(summary.balance)} icon={<Wallet />} accent="green" />
