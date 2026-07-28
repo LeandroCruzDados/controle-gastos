@@ -58,13 +58,22 @@ export async function POST(request: Request) {
         body: params
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result?.message ?? result?.error_message ?? "Falha ao enviar WhatsApp.");
+        const twilioMessage = result?.message ?? result?.error_message ?? "Falha ao enviar WhatsApp.";
+        const twilioCode = result?.code ? ` Codigo Twilio: ${result.code}.` : "";
+        throw new Error(`${twilioMessage}.${twilioCode}`);
       }
       return result;
     })
-  );
+  ).catch((error) => {
+    const message = error instanceof Error ? error.message : "Falha ao enviar WhatsApp.";
+    return { error: message };
+  });
+
+  if (!Array.isArray(results)) {
+    return NextResponse.json({ error: results.error }, { status: 502 });
+  }
 
   return NextResponse.json({ ok: true, sent: results.length });
 }
