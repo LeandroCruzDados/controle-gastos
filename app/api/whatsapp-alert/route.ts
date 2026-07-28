@@ -5,6 +5,7 @@ type AlertPayload = {
   balance: number;
   level: "low" | "zero";
   userEmail?: string;
+  test?: boolean;
 };
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sessao invalida." }, { status: 401 });
   }
 
-  const { balance, level, userEmail } = (await request.json()) as AlertPayload;
+  const { balance, level, userEmail, test } = (await request.json()) as AlertPayload;
 
   if (!Number.isFinite(balance) || !["low", "zero"].includes(level)) {
     return NextResponse.json({ error: "Alerta invalido." }, { status: 400 });
@@ -54,12 +55,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Twilio nao configurado." }, { status: 500 });
   }
 
-  const title = level === "zero" ? "ALERTA CRITICO" : "ALERTA DE SALDO";
-  const body =
-    `${title}\n` +
-    `Seu saldo chegou a ${currency.format(balance)}.\n` +
-    `${level === "zero" ? "A conta chegou a zero ou ficou negativa." : "A conta chegou a R$ 50,00 ou menos."}\n` +
-    `Lancamento feito por: ${userEmail || data.user.email || "usuario logado"}.`;
+  const title = test ? "TESTE DO DASHBOARD" : level === "zero" ? "ALERTA CRITICO" : "ALERTA DE SALDO";
+  const body = test
+    ? `Teste do Controle de Gastos.\nSe voce recebeu esta mensagem, a integracao com WhatsApp esta funcionando.`
+    : `${title}\n` +
+      `Seu saldo chegou a ${currency.format(balance)}.\n` +
+      `${level === "zero" ? "A conta chegou a zero ou ficou negativa." : "A conta chegou a R$ 50,00 ou menos."}\n` +
+      `Lancamento feito por: ${userEmail || data.user.email || "usuario logado"}.`;
 
   const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
   const authorization = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
@@ -82,7 +84,7 @@ export async function POST(request: Request) {
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result?.message ?? "Falha ao enviar WhatsApp.");
+        throw new Error(result?.message ?? result?.error_message ?? "Falha ao enviar WhatsApp.");
       }
       return result;
     })

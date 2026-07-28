@@ -135,7 +135,7 @@ export default function Home() {
         setForm((current) => ({ ...current, criadoPor: currentUser.email ?? "Eu" }));
         setAuthStatus(`Conectado como ${currentUser.email}.`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Erro desconhecido";
+        const message = getErrorMessage(error);
         setAuthStatus(`Não consegui carregar o Supabase: ${message}`);
       } finally {
         if (!cancelled) setLoadingCloud(false);
@@ -263,6 +263,42 @@ export default function Home() {
     } catch (error) {
       const detail = error instanceof Error ? error.message : "erro desconhecido";
       setAuthStatus(`Saldo baixo detectado, mas o WhatsApp falhou: ${detail}`);
+    }
+  }
+
+  async function testWhatsAppAlert() {
+    if (!supabase || !authUser) {
+      setAuthStatus("Entre na conta antes de testar o WhatsApp.");
+      return;
+    }
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      setAuthStatus("Sessao expirada. Saia e entre novamente antes de testar o WhatsApp.");
+      return;
+    }
+
+    try {
+      setAuthStatus("Enviando teste de WhatsApp...");
+      const response = await fetch("/api/whatsapp-alert", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ balance: summarize(transactions).balance, level: "low", userEmail: authUser.email, test: true })
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result?.error ?? "Falha ao enviar WhatsApp.");
+      }
+
+      setAuthStatus("Teste enviado. Confira seu WhatsApp.");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "erro desconhecido";
+      setAuthStatus(`Teste do WhatsApp falhou: ${detail}`);
     }
   }
 
@@ -531,6 +567,7 @@ export default function Home() {
               </select>
             </label>
             <button className="ghost" onClick={clearImportedData}>Limpar importados</button>
+            {authUser && <button className="ghost" onClick={testWhatsAppAlert}>Testar WhatsApp</button>}
             {authUser && <button className="ghost" onClick={signOut}>Sair</button>}
             <button className="ghost" onClick={() => setLight((value) => !value)}>{light ? <Moon size={17} /> : <Sun size={17} />} Tema</button>
           </div>
@@ -849,6 +886,15 @@ function mergeTransactions(localItems: Transaction[], cloudItems: Transaction[])
     merged.set(item.id, item);
   });
   return Array.from(merged.values()).sort((a, b) => b.data.localeCompare(a.data));
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "object" && error) {
+    const record = error as Record<string, unknown>;
+    return [record.message, record.code, record.details, record.hint].filter(Boolean).join(" | ") || JSON.stringify(record);
+  }
+  return String(error || "Erro desconhecido");
 }
 
 function isManualForecastSource(item: Transaction) {
