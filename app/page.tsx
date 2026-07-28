@@ -573,7 +573,7 @@ export default function Home() {
             </label>
             <button className="ghost" onClick={clearImportedData}>Limpar importados</button>
             <button className="ghost" onClick={restoreBaseData}>Restaurar base</button>
-            {authUser && <button className="ghost" onClick={testWhatsAppAlert}>Testar WhatsApp</button>}
+            <button className="ghost" onClick={testWhatsAppAlert}>Testar WhatsApp</button>
             {authUser && <button className="ghost" onClick={signOut}>Sair</button>}
             <button className="ghost" onClick={() => setLight((value) => !value)}>{light ? <Moon size={17} /> : <Sun size={17} />} Tema</button>
           </div>
