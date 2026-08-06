@@ -181,11 +181,11 @@ export default function Home() {
     });
   }, [creditCardExpenses]);
   const manualTransactions = useMemo(() => {
-    const currentMonth = transactions.filter(isCurrentMonth);
-    const manual = currentMonth.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item));
-    const creditSummaries = buildCreditCardSummaries(currentMonth.filter(isCreditCardDetailTransaction));
+    const selectedMonth = transactions.filter((item) => isInSelectedMonth(item, filters));
+    const manual = selectedMonth.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item));
+    const creditSummaries = buildCreditCardSummaries(selectedMonth.filter(isCreditCardDetailTransaction));
     return [...creditSummaries, ...manual].sort((a, b) => b.data.localeCompare(a.data));
-  }, [transactions]);
+  }, [transactions, filters]);
   const nextMonthFixedForecasts = useMemo(
     () => latestRecurringItems(transactions.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item) && isManualForecastSource(item))),
     [transactions]
@@ -400,6 +400,17 @@ export default function Home() {
 
   function markForecastPaid(item: Transaction, isCard = false) {
     const nextDate = nextMonthDateFor(item.data);
+    const alreadyPaid = transactions.some((transaction) => transaction.data === nextDate && recurringKey(transaction) === recurringKey(item));
+    if (alreadyPaid) {
+      const date = new Date(`${nextDate}T00:00:00`);
+      setFilters((current) => ({
+        ...current,
+        year: String(date.getFullYear()),
+        month: String(date.getMonth() + 1).padStart(2, "0")
+      }));
+      setFileStatus(`Essa previsão já foi marcada como paga em ${nextDate}: ${item.descricao}.`);
+      return;
+    }
     const nextItem: Transaction = {
       ...item,
       id: crypto.randomUUID(),
@@ -926,6 +937,13 @@ function isCurrentMonth(item: Transaction) {
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
 }
 
+function isInSelectedMonth(item: Transaction, filters: Filters) {
+  const date = new Date(`${item.data}T00:00:00`);
+  const selectedYear = filters.year === "all" ? new Date().getFullYear() : Number(filters.year);
+  const selectedMonth = filters.month === "all" ? new Date().getMonth() : Number(filters.month) - 1;
+  return date.getFullYear() === selectedYear && date.getMonth() === selectedMonth;
+}
+
 function isRecurringCardItem(item: Transaction) {
   if (item.recurringEnded) return false;
   const text = `${item.tipo} ${item.observacoes}`.toLowerCase();
@@ -951,7 +969,6 @@ function latestRecurringItems(items: Transaction[]) {
     if (!current || item.data > current.data) latest.set(key, item);
   });
   return Array.from(latest.values())
-    .filter((item) => !item.data.startsWith(nextMonthKey()))
     .sort((a, b) => a.data.localeCompare(b.data));
 }
 
