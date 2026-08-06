@@ -102,7 +102,7 @@ function toDbTransaction(item: Transaction, householdId: string, userId: string)
   const cardName = item.isCreditCardDetail ? item.subcategoria || item.conta || null : null;
 
   return {
-    id: item.id,
+    id: isUuid(item.id) ? item.id : newUuid(),
     household_id: householdId,
     user_id: userId,
     date: item.data,
@@ -120,6 +120,16 @@ function toDbTransaction(item: Transaction, householdId: string, userId: string)
     recurrence_active: !item.recurringEnded,
     forecast_status: "paid"
   };
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function newUuid() {
+  return globalThis.crypto?.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (char) =>
+    (Number(char) ^ (Math.random() * 16) >> (Number(char) / 4)).toString(16)
+  );
 }
 
 function fromDbTransaction(item: DbTransaction): Transaction {

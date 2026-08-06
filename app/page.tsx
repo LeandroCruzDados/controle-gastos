@@ -19,9 +19,9 @@ export default function Home() {
     if (typeof window === "undefined") return [];
     const saved = localStorage.getItem("finance-transactions");
     if (!saved) return [];
-    const parsed = JSON.parse(saved) as Transaction[];
-    const restored = restoreKnownManualTransactionsIfEmpty(parsed);
-    if (restored.length !== parsed.length) {
+    const parsed = normalizeTransactionIds(JSON.parse(saved) as Transaction[]);
+    const restored = normalizeTransactionIds(restoreKnownManualTransactionsIfEmpty(parsed));
+    if (restored.length !== parsed.length || restored.some((item, index) => item.id !== parsed[index]?.id)) {
       writeLocalTransactions(restored);
       localStorage.setItem("finance-restored-manuals", "true");
     }
@@ -210,11 +210,12 @@ export default function Home() {
   const accounts = unique(transactions.map((t) => t.conta));
   const payments = unique(transactions.map((t) => t.formaPagamento));
   function persist(next: Transaction[], message = `${next.length} lançamentos salvos.`) {
-    setTransactions(next);
-    writeLocalTransactions(next);
+    const normalizedNext = normalizeTransactionIds(next);
+    setTransactions(normalizedNext);
+    writeLocalTransactions(normalizedNext);
     setFileStatus(message);
-    syncCloud(next);
-    checkBalanceAlert(next);
+    syncCloud(normalizedNext);
+    checkBalanceAlert(normalizedNext);
   }
 
   async function syncCloud(next: Transaction[]) {
@@ -862,7 +863,7 @@ function readLocalTransactions() {
     const backup = localStorage.getItem("finance-transactions-backup");
     const source = saved && saved !== "[]" ? saved : backup;
     if (!source) return [];
-    return restoreKnownManualTransactionsIfEmpty(JSON.parse(source) as Transaction[]);
+    return normalizeTransactionIds(restoreKnownManualTransactionsIfEmpty(JSON.parse(source) as Transaction[]));
   } catch {
     return [];
   }
@@ -870,15 +871,30 @@ function readLocalTransactions() {
 
 function writeLocalTransactions(next: Transaction[]) {
   if (typeof window === "undefined") return;
+  const normalizedNext = normalizeTransactionIds(next);
   try {
     const current = localStorage.getItem("finance-transactions");
     if (current && current !== "[]") {
       localStorage.setItem("finance-transactions-backup", current);
     }
-    localStorage.setItem("finance-transactions", JSON.stringify(next));
+    localStorage.setItem("finance-transactions", JSON.stringify(normalizedNext));
   } catch {
-    localStorage.setItem("finance-transactions", JSON.stringify(next));
+    localStorage.setItem("finance-transactions", JSON.stringify(normalizedNext));
   }
+}
+
+function normalizeTransactionIds(items: Transaction[]) {
+  return items.map((item) => (isUuid(item.id) ? item : { ...item, id: newUuid() }));
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function newUuid() {
+  return globalThis.crypto?.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (char) =>
+    (Number(char) ^ (Math.random() * 16) >> (Number(char) / 4)).toString(16)
+  );
 }
 
 function mergeTransactions(localItems: Transaction[], cloudItems: Transaction[]) {
@@ -999,7 +1015,7 @@ function getKnownManualTransactions() {
     ["IPTU", "Despesa", "Moradia", "Conta corrente", "Débito", 93.52],
     ["Ração", "Despesa", "Pet", "Conta corrente", "Débito", 58]
   ].map(([descricao, tipo, categoria, conta, formaPagamento, valor]) => ({
-    id: `restored-${String(descricao).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    id: newUuid(),
     data: "2026-07-09",
     descricao: String(descricao),
     categoria: String(categoria),
@@ -1031,7 +1047,7 @@ function restoreKnownManualTransactionsIfEmpty(transactions: Transaction[]) {
     ["IPTU", "Despesa", "Moradia", "Conta corrente", "Débito", 93.52],
     ["Ração", "Despesa", "Pet", "Conta corrente", "Débito", 58]
   ].map(([descricao, tipo, categoria, conta, formaPagamento, valor]) => ({
-    id: `restored-${String(descricao).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    id: newUuid(),
     data: "2026-07-09",
     descricao: String(descricao),
     categoria: String(categoria),
