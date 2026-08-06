@@ -187,11 +187,11 @@ export default function Home() {
     return [...creditSummaries, ...manual].sort((a, b) => b.data.localeCompare(a.data));
   }, [transactions, filters]);
   const nextMonthFixedForecasts = useMemo(
-    () => latestRecurringItems(transactions.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item) && isManualForecastSource(item))),
+    () => toForecastItems(latestRecurringItems(transactions.filter((item) => !isForecastPaidItem(item) && !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item) && isManualForecastSource(item)))),
     [transactions]
   );
   const nextMonthCardForecasts = useMemo(
-    () => latestRecurringItems(transactions.filter((item) => isCreditCardDetailTransaction(item) && isRecurringCardItem(item))),
+    () => toForecastItems(latestRecurringItems(transactions.filter((item) => !isForecastPaidItem(item) && isCreditCardDetailTransaction(item) && isRecurringCardItem(item))), true),
     [transactions]
   );
   const nextMonthCardForecastSummaries = useMemo(() => buildCreditCardSummaries(nextMonthCardForecasts), [nextMonthCardForecasts]);
@@ -398,8 +398,17 @@ export default function Home() {
     persist(next, `Recorrência finalizada: ${item.descricao}. Ela não aparecerá nas próximas previsões.`);
   }
 
+  function deleteForecastSource(item: Transaction) {
+    const next = transactions.map((transaction) =>
+      recurringKey(transaction) === recurringKey(item) && !isForecastPaidItem(transaction)
+        ? { ...transaction, recurringEnded: true }
+        : transaction
+    );
+    persist(next, `Previsao excluida: ${item.descricao}.`);
+  }
+
   function markForecastPaid(item: Transaction, isCard = false) {
-    const nextDate = nextMonthDateFor(item.data);
+    const nextDate = item.data;
     const alreadyPaid = transactions.some((transaction) => transaction.data === nextDate && recurringKey(transaction) === recurringKey(item));
     if (alreadyPaid) {
       const date = new Date(`${nextDate}T00:00:00`);
@@ -417,7 +426,8 @@ export default function Home() {
       data: nextDate,
       criadoPor: activeUser,
       recurringEnded: false,
-      isCreditCardDetail: isCard || item.isCreditCardDetail
+      isCreditCardDetail: isCard || item.isCreditCardDetail,
+      observacoes: withForecastPaidMarker(item.observacoes)
     };
     const date = new Date(`${nextDate}T00:00:00`);
     setFilters((current) => ({
@@ -615,7 +625,7 @@ export default function Home() {
                   <div>
                     <strong>{item.descricao}</strong>
                     <small>{item.data} • {item.tipo} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small>
-                    <small>Observações: {item.observacoes || "Sem observações"}</small>
+                    <small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small>
                   </div>
                   <b>{currency.format(item.valor)}</b>
                   {!isCreditCardSummaryTransaction(item) ? (
@@ -641,7 +651,7 @@ export default function Home() {
             emptyText="Nenhuma despesa fixa ou salário ativo para o próximo mês."
             onPaid={(item) => markForecastPaid(item)}
             onFinish={finishRecurring}
-            onDelete={(item) => deleteManual(item.id)}
+            onDelete={deleteForecastSource}
           />
         </Panel>
         </section>
@@ -685,7 +695,7 @@ export default function Home() {
           </Panel>
 
           <Panel title="Gastos do mês atual">
-            <div className="ranking">{currentMonthExpenses.map((item, index) => <div className="rank" key={item.id}><span>{index + 1}</span><div><strong>{item.descricao}</strong><small>{item.data} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {item.observacoes || "Sem observações"}</small></div><b>{currency.format(item.valor)}</b></div>)}</div>
+            <div className="ranking">{currentMonthExpenses.map((item, index) => <div className="rank" key={item.id}><span>{index + 1}</span><div><strong>{item.descricao}</strong><small>{item.data} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small></div><b>{currency.format(item.valor)}</b></div>)}</div>
           </Panel>
         </section>
 
@@ -719,7 +729,7 @@ export default function Home() {
                       <div className="credit-row" key={item.id}>
                         <div>
                           <strong>{item.descricao}</strong>
-                          <small>{item.data} • {item.categoria} • {item.observacoes || item.tipo}</small>
+                          <small>{item.data} • {item.categoria} • {displayNotes(item.observacoes) || item.tipo}</small>
                         </div>
                         <b>{currency.format(item.valor)}</b>
                         <div className="row-actions">
@@ -746,7 +756,7 @@ export default function Home() {
               emptyText="Nenhuma compra recorrente ativa nos cartões."
               onPaid={(item) => markForecastPaid(item, true)}
               onFinish={finishRecurring}
-              onDelete={(item) => deleteManual(item.id)}
+              onDelete={deleteForecastSource}
             />
           </section>
           </div>
@@ -776,7 +786,7 @@ export default function Home() {
           </Panel>
 
           <Panel title="Despesas recorrentes">
-            <div className="calendar">{recurringExpenses.slice(0, 12).map((item) => <div key={item.id}><span>{item.data.slice(5)}</span><strong>{item.descricao}</strong><small>{currency.format(item.valor)} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {item.observacoes || "Sem observações"}</small></div>)}</div>
+            <div className="calendar">{recurringExpenses.slice(0, 12).map((item) => <div key={item.id}><span>{item.data.slice(5)}</span><strong>{item.descricao}</strong><small>{currency.format(item.valor)} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small></div>)}</div>
           </Panel>
         </section>
       </section>
@@ -803,8 +813,8 @@ function ForecastList({ items, emptyText, onPaid, onFinish, onDelete }: { items:
       <div className="forecast-row" key={recurringKey(item)}>
         <div>
           <strong>{item.descricao}</strong>
-          <small>{nextMonthDateFor(item.data)} • {item.tipo} • {item.categoria} • {item.conta}</small>
-          <small>Previsão: {item.observacoes || "Recorrente"}</small>
+          <small>{item.data} • {item.tipo} • {item.categoria} • {item.conta}</small>
+          <small>Previsão: {displayNotes(item.observacoes) || "Recorrente"}</small>
         </div>
         <b>{currency.format(item.valor)}</b>
         {isCreditCardSummaryTransaction(item) ? (
@@ -948,6 +958,27 @@ function isRecurringCardItem(item: Transaction) {
   if (item.recurringEnded) return false;
   const text = `${item.tipo} ${item.observacoes}`.toLowerCase();
   return item.tipo === "Despesa Fixa" || text.includes("recorrente");
+}
+
+function toForecastItems(items: Transaction[], isCard = false) {
+  return items.map((item) => ({
+    ...item,
+    id: `forecast-${item.id}`,
+    data: nextMonthDateFor(item.data),
+    isCreditCardDetail: isCard || item.isCreditCardDetail
+  }));
+}
+
+function isForecastPaidItem(item: Transaction) {
+  return item.observacoes.includes("[pago-da-previsao]");
+}
+
+function withForecastPaidMarker(notes: string) {
+  return notes.includes("[pago-da-previsao]") ? notes : `${notes ? `${notes} ` : ""}[pago-da-previsao]`;
+}
+
+function displayNotes(notes: string) {
+  return notes.replace("[pago-da-previsao]", "").trim();
 }
 
 function recurringKey(item: Transaction) {
