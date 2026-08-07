@@ -367,11 +367,19 @@ export default function Home() {
     setFileStatus("Edição cancelada.");
   }
 
-  function deleteManual(id: string) {
+  async function deleteManual(id: string) {
     const target = transactions.find((item) => item.id === id);
     if (!target) return;
     const next = transactions.filter((item) => item.id !== id);
     persist(next, `Lançamento manual excluído: ${target.descricao}.`);
+    if (authUser && householdId && isUuid(id)) {
+      try {
+        await deleteTransaction(id);
+        setAuthStatus(`Excluído da nuvem: ${target.descricao}.`);
+      } catch (error) {
+        setAuthStatus(`Removi deste navegador, mas falhou ao excluir da nuvem: ${getErrorMessage(error)}`);
+      }
+    }
     if (editingId === id) cancelEdit();
     if (cardEditingId === id) cancelCardEdit();
   }
@@ -669,15 +677,11 @@ export default function Home() {
                     <small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small>
                   </div>
                   <b>{currency.format(item.valor)}</b>
-                  {!isCreditCardSummaryTransaction(item) ? (
-                    <div className="row-actions">
-                      {item.tipo !== "Receita" && <button className="relaunch-button" onClick={() => relaunchExpense(item)}>Relançar despesa</button>}
-                      <button className="edit-button" onClick={() => startEditManual(item)}>Editar</button>
-                      <button className="delete-button" onClick={() => deleteManual(item.id)}><Trash2 size={16} /> Excluir</button>
-                    </div>
-                  ) : (
-                    <small className="summary-label">Resumo do cartão</small>
-                  )}
+                  <div className="row-actions">
+                    {!isCreditCardSummaryTransaction(item) && item.tipo !== "Receita" && <button className="relaunch-button" onClick={() => relaunchExpense(item)}>Relançar despesa</button>}
+                    {!isCreditCardSummaryTransaction(item) && <button className="edit-button" onClick={() => startEditManual(item)}>Editar</button>}
+                    <button className="delete-button" onClick={() => deleteManual(item.id)}><Trash2 size={16} /> {isCreditCardSummaryTransaction(item) ? "Excluir fatura" : "Excluir"}</button>
+                  </div>
                 </div>
               ))}
             </div>
