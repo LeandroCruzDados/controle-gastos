@@ -294,8 +294,14 @@ export function runningBalance(transactions: Transaction[]) {
   let balance = 0;
   return [...transactions].sort((a, b) => a.data.localeCompare(b.data)).map((item) => {
     balance += item.tipo === "Receita" ? item.valor : -item.valor;
-    return { date: item.data.slice(5), saldo: balance };
+    return { date: formatDateBr(item.data), saldo: balance };
   });
+}
+
+function formatDateBr(dateString: string) {
+  const [year, month, day] = dateString.split("-");
+  if (!year || !month || !day) return dateString;
+  return `${day}/${month}/${year}`;
 }
 
 export function generateInsights(transactions: Transaction[]): Insight[] {

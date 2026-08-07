@@ -19,9 +19,9 @@ export default function Home() {
     if (typeof window === "undefined") return [];
     const saved = localStorage.getItem("finance-transactions");
     if (!saved) return [];
-    const parsed = normalizeTransactionIds(JSON.parse(saved) as Transaction[]);
-    const restored = normalizeTransactionIds(restoreKnownManualTransactionsIfEmpty(parsed));
-    if (restored.length !== parsed.length || restored.some((item, index) => item.id !== parsed[index]?.id)) {
+    const parsed = normalizeExistingTransactions(JSON.parse(saved) as Transaction[]);
+    const restored = normalizeExistingTransactions(restoreKnownManualTransactionsIfEmpty(parsed));
+    if (JSON.stringify(restored) !== JSON.stringify(parsed)) {
       writeLocalTransactions(restored);
       localStorage.setItem("finance-restored-manuals", "true");
     }
@@ -110,8 +110,9 @@ export default function Home() {
 
         setHouseholdId(household);
         const localItems = readLocalTransactions();
-        const mergedItems = mergeTransactions(localItems, cloudItems);
-        if (mergedItems.length > cloudItems.length) {
+        const mergedItems = normalizeExistingTransactions(mergeTransactions(localItems, cloudItems));
+        const normalizedCloudItems = normalizeExistingTransactions(cloudItems);
+        if (JSON.stringify(mergedItems) !== JSON.stringify(normalizedCloudItems)) {
           await saveTransactions(mergedItems, household, currentUser);
         }
         setTransactions(mergedItems);
@@ -188,11 +189,11 @@ export default function Home() {
     return [...creditSummaries, ...manual].sort((a, b) => b.data.localeCompare(a.data));
   }, [realizedTransactions, filters]);
   const nextMonthFixedForecasts = useMemo(
-    () => toForecastItems(latestRecurringItems(transactions.filter((item) => !isForecastPaidItem(item) && !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item) && isManualForecastSource(item)))),
+    () => toForecastItems(latestRecurringItems(transactions.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item) && isManualForecastSource(item)))),
     [transactions]
   );
   const nextMonthCardForecasts = useMemo(
-    () => toForecastItems(latestRecurringItems(transactions.filter((item) => !isForecastPaidItem(item) && isCreditCardDetailTransaction(item) && isRecurringCardItem(item))), true),
+    () => toForecastItems(latestRecurringItems(transactions.filter((item) => isCreditCardDetailTransaction(item) && isRecurringCardItem(item))), true),
     [transactions]
   );
   const nextMonthCardForecastSummaries = useMemo(() => buildCreditCardSummaries(nextMonthCardForecasts), [nextMonthCardForecasts]);
@@ -211,7 +212,7 @@ export default function Home() {
   const accounts = unique(realizedTransactions.map((t) => t.conta));
   const payments = unique(realizedTransactions.map((t) => t.formaPagamento));
   function persist(next: Transaction[], message = `${next.length} lançamentos salvos.`) {
-    const normalizedNext = normalizeTransactionIds(next);
+    const normalizedNext = normalizeExistingTransactions(next);
     setTransactions(normalizedNext);
     writeLocalTransactions(normalizedNext);
     setFileStatus(message);
@@ -231,7 +232,7 @@ export default function Home() {
   }
 
   async function checkBalanceAlert(next: Transaction[]) {
-    const balance = summarize(next).balance;
+    const balance = summarize(next.filter(isRealizedTransaction)).balance;
     const level = balance <= 0 ? "zero" : balance <= 50 ? "low" : null;
     if (!level) return;
 
@@ -410,7 +411,7 @@ export default function Home() {
 
   function markForecastPaid(item: Transaction, isCard = false) {
     const nextDate = item.data;
-    const alreadyPaid = transactions.some((transaction) => transaction.data === nextDate && recurringKey(transaction) === recurringKey(item));
+    const alreadyPaid = transactions.some((transaction) => isRealizedTransaction(transaction) && transaction.data === nextDate && recurringKey(transaction) === recurringKey(item));
     if (alreadyPaid) {
       const date = new Date(`${nextDate}T00:00:00`);
       setFilters((current) => ({
@@ -427,6 +428,7 @@ export default function Home() {
       data: nextDate,
       criadoPor: activeUser,
       recurringEnded: false,
+      forecastStatus: "paid",
       isCreditCardDetail: isCard || item.isCreditCardDetail,
       observacoes: withForecastPaidMarker(item.observacoes)
     };
@@ -625,7 +627,7 @@ export default function Home() {
                 <div className="manual-row" key={item.id}>
                   <div>
                     <strong>{item.descricao}</strong>
-                    <small>{item.data} • {item.tipo} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small>
+                    <small>{formatDateBr(item.data)} • {item.tipo} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small>
                     <small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small>
                   </div>
                   <b>{currency.format(item.valor)}</b>
@@ -696,7 +698,7 @@ export default function Home() {
           </Panel>
 
           <Panel title="Gastos do mês atual">
-            <div className="ranking">{currentMonthExpenses.map((item, index) => <div className="rank" key={item.id}><span>{index + 1}</span><div><strong>{item.descricao}</strong><small>{item.data} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small></div><b>{currency.format(item.valor)}</b></div>)}</div>
+            <div className="ranking">{currentMonthExpenses.map((item, index) => <div className="rank" key={item.id}><span>{index + 1}</span><div><strong>{item.descricao}</strong><small>{formatDateBr(item.data)} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small></div><b>{currency.format(item.valor)}</b></div>)}</div>
           </Panel>
         </section>
 
@@ -730,7 +732,7 @@ export default function Home() {
                       <div className="credit-row" key={item.id}>
                         <div>
                           <strong>{item.descricao}</strong>
-                          <small>{item.data} • {item.categoria} • {displayNotes(item.observacoes) || item.tipo}</small>
+                          <small>{formatDateBr(item.data)} • {item.categoria} • {displayNotes(item.observacoes) || item.tipo}</small>
                         </div>
                         <b>{currency.format(item.valor)}</b>
                         <div className="row-actions">
@@ -787,7 +789,7 @@ export default function Home() {
           </Panel>
 
           <Panel title="Despesas recorrentes">
-            <div className="calendar">{recurringExpenses.slice(0, 12).map((item) => <div key={item.id}><span>{item.data.slice(5)}</span><strong>{item.descricao}</strong><small>{currency.format(item.valor)} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small></div>)}</div>
+            <div className="calendar">{recurringExpenses.slice(0, 12).map((item) => <div key={item.id}><span>{formatDateBr(item.data).slice(0, 5)}</span><strong>{item.descricao}</strong><small>{currency.format(item.valor)} • {item.categoria} • {item.criadoPor ?? "Sem usuário"}</small><small>Observações: {displayNotes(item.observacoes) || "Sem observações"}</small></div>)}</div>
           </Panel>
         </section>
       </section>
@@ -814,7 +816,7 @@ function ForecastList({ items, emptyText, onPaid, onFinish, onDelete }: { items:
       <div className="forecast-row" key={recurringKey(item)}>
         <div>
           <strong>{item.descricao}</strong>
-          <small>{item.data} • {item.tipo} • {item.categoria} • {item.conta}</small>
+          <small>{formatDateBr(item.data)} • {item.tipo} • {item.categoria} • {item.conta}</small>
           <small>Previsão: {displayNotes(item.observacoes) || "Recorrente"}</small>
         </div>
         <b>{currency.format(item.valor)}</b>
@@ -856,7 +858,7 @@ function addOneMonth(dateString: string) {
   const next = new Date(date.getFullYear(), date.getMonth() + 1, 1);
   const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
   next.setDate(Math.min(date.getDate(), lastDay));
-  return next.toISOString().slice(0, 10);
+  return formatYmd(next);
 }
 
 function nextMonthDateFor(dateString: string) {
@@ -865,13 +867,50 @@ function nextMonthDateFor(dateString: string) {
   const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
   next.setDate(Math.min(source.getDate(), lastDay));
-  return next.toISOString().slice(0, 10);
+  return formatYmd(next);
+}
+
+function currentMonthDateFor(dateString: string) {
+  const now = new Date();
+  const source = new Date(`${dateString}T00:00:00`);
+  const current = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate();
+  current.setDate(Math.min(source.getDate(), lastDay));
+  return formatYmd(current);
+}
+
+function forecastDateFor(item: Transaction) {
+  if (isRealizedTransaction(item)) return addOneMonth(item.data);
+  if (isPastMonth(item.data)) return currentMonthDateFor(item.data);
+  return item.data;
+}
+
+function formatYmd(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatDateBr(dateString: string) {
+  const [year, month, day] = dateString.split("-");
+  if (!year || !month || !day) return dateString;
+  return `${day}/${month}/${year}`;
 }
 
 function nextMonthKey() {
   const now = new Date();
   const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function isPastMonth(dateString: string) {
+  const now = new Date();
+  const date = new Date(`${dateString}T00:00:00`);
+  return date.getFullYear() < now.getFullYear() || (date.getFullYear() === now.getFullYear() && date.getMonth() < now.getMonth());
+}
+
+function isFutureMonth(dateString: string) {
+  const now = new Date();
+  const date = new Date(`${dateString}T00:00:00`);
+  return date.getFullYear() > now.getFullYear() || (date.getFullYear() === now.getFullYear() && date.getMonth() > now.getMonth());
 }
 
 function unique(values: string[]) {
@@ -885,7 +924,7 @@ function readLocalTransactions() {
     const backup = localStorage.getItem("finance-transactions-backup");
     const source = saved && saved !== "[]" ? saved : backup;
     if (!source) return [];
-    return normalizeTransactionIds(restoreKnownManualTransactionsIfEmpty(JSON.parse(source) as Transaction[]));
+    return normalizeExistingTransactions(restoreKnownManualTransactionsIfEmpty(JSON.parse(source) as Transaction[]));
   } catch {
     return [];
   }
@@ -893,7 +932,7 @@ function readLocalTransactions() {
 
 function writeLocalTransactions(next: Transaction[]) {
   if (typeof window === "undefined") return;
-  const normalizedNext = normalizeTransactionIds(next);
+  const normalizedNext = normalizeExistingTransactions(next);
   try {
     const current = localStorage.getItem("finance-transactions");
     if (current && current !== "[]") {
@@ -905,8 +944,15 @@ function writeLocalTransactions(next: Transaction[]) {
   }
 }
 
-function normalizeTransactionIds(items: Transaction[]) {
-  return items.map((item) => (isUuid(item.id) ? item : { ...item, id: newUuid() }));
+function normalizeExistingTransactions(items: Transaction[]) {
+  return items.map((item) => {
+    const normalized = isUuid(item.id) ? item : { ...item, id: newUuid() };
+    const forecastStatus = isForecastTemplateItem(normalized) && !isForecastPaidItem(normalized) ? "forecast" : normalized.forecastStatus ?? "paid";
+    if (isForecastPaidItem(normalized) && isFutureMonth(normalized.data)) {
+      return { ...normalized, data: currentMonthDateFor(normalized.data), forecastStatus: "paid" as const };
+    }
+    return { ...normalized, forecastStatus };
+  });
 }
 
 function isUuid(value: string) {
@@ -938,8 +984,8 @@ function getErrorMessage(error: unknown) {
 
 function isManualForecastSource(item: Transaction) {
   if (item.recurringEnded) return false;
-  const text = `${item.descricao} ${item.categoria} ${item.observacoes}`.toLowerCase();
-  return item.tipo === "Despesa Fixa" || (item.tipo === "Receita" && text.includes("salário"));
+  const text = normalizeText(`${item.descricao} ${item.categoria} ${item.observacoes}`);
+  return item.tipo === "Despesa Fixa" || (item.tipo === "Receita" && text.includes("salario"));
 }
 
 function isCurrentMonth(item: Transaction) {
@@ -950,6 +996,7 @@ function isCurrentMonth(item: Transaction) {
 
 function isRealizedTransaction(item: Transaction) {
   if (isForecastPaidItem(item)) return true;
+  if (item.forecastStatus === "forecast") return false;
   if (isForecastTemplateItem(item)) return false;
   const today = new Date();
   today.setHours(23, 59, 59, 999);
@@ -958,7 +1005,7 @@ function isRealizedTransaction(item: Transaction) {
 }
 
 function isForecastTemplateItem(item: Transaction) {
-  return normalizeText(item.observacoes).includes("restaurado");
+  return item.forecastStatus === "forecast" || normalizeText(item.observacoes).includes("restaurado");
 }
 
 function isInSelectedMonth(item: Transaction, filters: Filters) {
@@ -978,7 +1025,8 @@ function toForecastItems(items: Transaction[], isCard = false) {
   return items.map((item) => ({
     ...item,
     id: `forecast-${item.id}`,
-    data: nextMonthDateFor(item.data),
+    data: forecastDateFor(item),
+    forecastStatus: "forecast" as const,
     isCreditCardDetail: isCard || item.isCreditCardDetail
   }));
 }
@@ -1091,7 +1139,8 @@ function getKnownManualTransactions() {
     conta: String(conta),
     formaPagamento: String(formaPagamento),
     observacoes: "Restaurado apos separacao do cartao de credito",
-    criadoPor: "Sistema"
+    criadoPor: "Sistema",
+    forecastStatus: "forecast" as const
   }));
 }
 
@@ -1123,7 +1172,8 @@ function restoreKnownManualTransactionsIfEmpty(transactions: Transaction[]) {
     conta: String(conta),
     formaPagamento: String(formaPagamento),
     observacoes: "Restaurado após separação do cartão de crédito",
-    criadoPor: "Sistema"
+    criadoPor: "Sistema",
+    forecastStatus: "forecast" as const
   }));
 
   return [...restored, ...transactions];

@@ -118,7 +118,9 @@ function toDbTransaction(item: Transaction, householdId: string, userId: string)
     card_name: cardName,
     is_recurring: item.tipo === "Despesa Fixa" || item.observacoes.toLowerCase().includes("recorrente"),
     recurrence_active: !item.recurringEnded,
-    forecast_status: "paid"
+    forecast_status: normalizeText(item.observacoes).includes("restaurado") && !item.observacoes.includes("[pago-da-previsao]")
+      ? "forecast"
+      : item.forecastStatus ?? "paid"
   };
 }
 
@@ -146,6 +148,11 @@ function fromDbTransaction(item: DbTransaction): Transaction {
     observacoes: item.notes ?? "",
     criadoPor: item.user_id,
     isCreditCardDetail: item.source === "card",
-    recurringEnded: !item.recurrence_active
+    recurringEnded: !item.recurrence_active,
+    forecastStatus: item.forecast_status
   };
+}
+
+function normalizeText(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }

@@ -14,6 +14,7 @@ export type Transaction = {
   criadoPor?: string;
   isCreditCardDetail?: boolean;
   recurringEnded?: boolean;
+  forecastStatus?: "forecast" | "paid";
   sourceFile?: string;
   importBatchId?: string;
   importedAt?: string;
