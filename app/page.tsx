@@ -172,21 +172,22 @@ export default function Home() {
   }, [filtered]);
   const recurringExpenses = useMemo(() => filtered.filter((item) => item.tipo === "Despesa Fixa").sort((a, b) => b.data.localeCompare(a.data)), [filtered]);
   const creditCardExpenses = useMemo(
-    () => filtered.filter(isCreditCardDetailTransaction).sort((a, b) => b.data.localeCompare(a.data)),
-    [filtered]
+    () => transactions.filter((item) => isCreditCardDetailTransaction(item) && isInSelectedMonth(item, filters)).sort((a, b) => b.data.localeCompare(a.data)),
+    [transactions, filters]
   );
   const creditCardGroups = useMemo(() => {
     const names = ["Nubank", "Santander"];
     return names.map((name) => {
       const items = creditCardExpenses.filter((item) => getCardName(item) === name);
-      return { name, items, total: items.reduce((sum, item) => sum + item.valor, 0) };
+      const total = items.reduce((sum, item) => sum + item.valor, 0);
+      const paid = realizedTransactions.some((item) => isCreditCardSummaryTransaction(item) && getCardName(item) === name && isInSelectedMonth(item, filters));
+      return { name, items, total, paid };
     });
-  }, [creditCardExpenses]);
+  }, [creditCardExpenses, realizedTransactions, filters]);
   const manualTransactions = useMemo(() => {
     const selectedMonth = realizedTransactions.filter((item) => isInSelectedMonth(item, filters));
-    const manual = selectedMonth.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item));
-    const creditSummaries = buildCreditCardSummaries(selectedMonth.filter(isCreditCardDetailTransaction));
-    return [...creditSummaries, ...manual].sort((a, b) => b.data.localeCompare(a.data));
+    const manual = selectedMonth.filter((item) => !isCreditCardDetailTransaction(item));
+    return manual.sort((a, b) => b.data.localeCompare(a.data));
   }, [realizedTransactions, filters]);
   const nextMonthFixedForecasts = useMemo(
     () => toForecastItems(latestRecurringItems(transactions.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item) && isManualForecastSource(item)))),
@@ -236,7 +237,7 @@ export default function Home() {
     const level = balance <= 0 ? "zero" : balance <= 50 ? "low" : null;
     if (!level) return;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatYmd(new Date());
     const alertKey = `finance-whatsapp-alert-${level}-${today}`;
     if (localStorage.getItem(alertKey) === "true") return;
 
@@ -462,7 +463,8 @@ export default function Home() {
       formaPagamento: "Crédito",
       observacoes: cardForm.observacoes,
       criadoPor: activeUser,
-      isCreditCardDetail: true
+      isCreditCardDetail: true,
+      forecastStatus: "forecast"
     };
     const next = cardEditingId
       ? transactions.map((item) => (item.id === cardEditingId ? nextItem : item))
@@ -470,6 +472,42 @@ export default function Home() {
     persist(next, `Compra no cartão ${cardEditingId ? "atualizada" : "adicionada"} por ${activeUser}: ${currency.format(nextItem.valor)}.`);
     setCardEditingId(null);
     setCardForm({ descricao: "", categoria: "", subcategoria: "Nubank", valor: 0, observacoes: "" });
+  }
+
+  function payCreditCardGroup(name: string, total: number) {
+    if (!total) {
+      setFileStatus(`Nenhuma compra no ${name} para marcar como paga.`);
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const alreadyPaid = transactions.some((item) =>
+      isRealizedTransaction(item) &&
+      isCreditCardSummaryTransaction(item) &&
+      getCardName(item) === name &&
+      isInSelectedMonth(item, filters)
+    );
+    if (alreadyPaid) {
+      setFileStatus(`A fatura do cartão ${name} já foi marcada como paga neste mês.`);
+      return;
+    }
+
+    const nextItem: Transaction = {
+      id: crypto.randomUUID(),
+      data: today,
+      descricao: `Cartão ${name}`,
+      categoria: "Cartão de Crédito",
+      subcategoria: name,
+      tipo: "Despesa",
+      valor: total,
+      conta: name,
+      formaPagamento: "Crédito",
+      observacoes: "Fatura do cartão paga. Detalhamento disponível no quadro Cartão de Crédito.",
+      criadoPor: activeUser,
+      forecastStatus: "paid"
+    };
+
+    persist([nextItem, ...transactions], `Fatura do cartão ${name} marcada como paga: ${currency.format(total)}.`);
   }
 
   function startEditCard(item: Transaction) {
@@ -724,7 +762,12 @@ export default function Home() {
               <section className="credit-card-group" key={group.name}>
                 <div className="credit-group-header">
                   <span>Total {group.name}</span>
-                  <strong>{currency.format(group.total)}</strong>
+                  <div className="credit-total-actions">
+                    <strong>{currency.format(group.total)}</strong>
+                    <button className="paid-button" disabled={group.paid || !group.total} onClick={() => payCreditCardGroup(group.name, group.total)}>
+                      {group.paid ? "Pago" : "Pagar fatura"}
+                    </button>
+                  </div>
                 </div>
                 {group.items.length ? (
                   <div className="credit-list">
@@ -947,6 +990,9 @@ function writeLocalTransactions(next: Transaction[]) {
 function normalizeExistingTransactions(items: Transaction[]) {
   return items.map((item) => {
     const normalized = isUuid(item.id) ? item : { ...item, id: newUuid() };
+    if (isCreditCardDetailTransaction(normalized)) {
+      return { ...normalized, forecastStatus: "forecast" as const };
+    }
     const forecastStatus = isForecastTemplateItem(normalized) && !isForecastPaidItem(normalized) ? "forecast" : normalized.forecastStatus ?? "paid";
     if (isForecastPaidItem(normalized) && isFutureMonth(normalized.data)) {
       return { ...normalized, data: currentMonthDateFor(normalized.data), forecastStatus: "paid" as const };
@@ -995,6 +1041,7 @@ function isCurrentMonth(item: Transaction) {
 }
 
 function isRealizedTransaction(item: Transaction) {
+  if (isCreditCardDetailTransaction(item)) return false;
   if (isForecastPaidItem(item)) return true;
   if (item.forecastStatus === "forecast") return false;
   if (isForecastTemplateItem(item)) return false;
@@ -1195,6 +1242,8 @@ const styles = `
   .credit-group-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
   .credit-group-header span{color:#aeb4cf;font-size:12px;font-weight:900;text-transform:uppercase}
   .credit-group-header strong{color:#b8ff00;font-size:24px}
+  .credit-total-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .paid-button:disabled{opacity:.65;cursor:not-allowed}
   .credit-card-group .credit-row{grid-template-columns:minmax(0,1fr) auto auto}
   .panel-title-row,.forecast-title{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%}
   .panel-title-row strong,.forecast-title strong{color:#b8ff00;font-size:22px}

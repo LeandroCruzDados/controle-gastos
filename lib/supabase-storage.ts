@@ -118,7 +118,9 @@ function toDbTransaction(item: Transaction, householdId: string, userId: string)
     card_name: cardName,
     is_recurring: item.tipo === "Despesa Fixa" || item.observacoes.toLowerCase().includes("recorrente"),
     recurrence_active: !item.recurringEnded,
-    forecast_status: normalizeText(item.observacoes).includes("restaurado") && !item.observacoes.includes("[pago-da-previsao]")
+    forecast_status: item.isCreditCardDetail
+      ? "forecast"
+      : normalizeText(item.observacoes).includes("restaurado") && !item.observacoes.includes("[pago-da-previsao]")
       ? "forecast"
       : item.forecastStatus ?? "paid"
   };
