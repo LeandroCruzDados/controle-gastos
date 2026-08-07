@@ -148,7 +148,8 @@ export default function Home() {
     };
   }, [authUser]);
 
-  const filtered = useMemo(() => applyFilters(transactions, filters), [transactions, filters]);
+  const realizedTransactions = useMemo(() => transactions.filter(isRealizedTransaction), [transactions]);
+  const filtered = useMemo(() => applyFilters(realizedTransactions, filters), [realizedTransactions, filters]);
   const summary = useMemo(() => summarize(filtered), [filtered]);
   const monthly = useMemo(() => monthlyFlow(filtered), [filtered]);
   const categoryData = useMemo(() => groupBy(filtered, "categoria", true), [filtered]);
@@ -181,11 +182,11 @@ export default function Home() {
     });
   }, [creditCardExpenses]);
   const manualTransactions = useMemo(() => {
-    const selectedMonth = transactions.filter((item) => isInSelectedMonth(item, filters));
+    const selectedMonth = realizedTransactions.filter((item) => isInSelectedMonth(item, filters));
     const manual = selectedMonth.filter((item) => !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item));
     const creditSummaries = buildCreditCardSummaries(selectedMonth.filter(isCreditCardDetailTransaction));
     return [...creditSummaries, ...manual].sort((a, b) => b.data.localeCompare(a.data));
-  }, [transactions, filters]);
+  }, [realizedTransactions, filters]);
   const nextMonthFixedForecasts = useMemo(
     () => toForecastItems(latestRecurringItems(transactions.filter((item) => !isForecastPaidItem(item) && !isCreditCardDetailTransaction(item) && !isCreditCardSummaryTransaction(item) && isManualForecastSource(item)))),
     [transactions]
@@ -206,9 +207,9 @@ export default function Home() {
   );
   const insights = useMemo(() => generateInsights(filtered), [filtered]);
 
-  const categories = unique(transactions.map((t) => t.categoria));
-  const accounts = unique(transactions.map((t) => t.conta));
-  const payments = unique(transactions.map((t) => t.formaPagamento));
+  const categories = unique(realizedTransactions.map((t) => t.categoria));
+  const accounts = unique(realizedTransactions.map((t) => t.conta));
+  const payments = unique(realizedTransactions.map((t) => t.formaPagamento));
   function persist(next: Transaction[], message = `${next.length} lançamentos salvos.`) {
     const normalizedNext = normalizeTransactionIds(next);
     setTransactions(normalizedNext);
@@ -945,6 +946,14 @@ function isCurrentMonth(item: Transaction) {
   const now = new Date();
   const date = new Date(`${item.data}T00:00:00`);
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
+
+function isRealizedTransaction(item: Transaction) {
+  if (isForecastPaidItem(item)) return true;
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const date = new Date(`${item.data}T00:00:00`);
+  return date <= today;
 }
 
 function isInSelectedMonth(item: Transaction, filters: Filters) {
