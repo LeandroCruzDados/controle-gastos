@@ -950,10 +950,15 @@ function isCurrentMonth(item: Transaction) {
 
 function isRealizedTransaction(item: Transaction) {
   if (isForecastPaidItem(item)) return true;
+  if (isForecastTemplateItem(item)) return false;
   const today = new Date();
   today.setHours(23, 59, 59, 999);
   const date = new Date(`${item.data}T00:00:00`);
   return date <= today;
+}
+
+function isForecastTemplateItem(item: Transaction) {
+  return normalizeText(item.observacoes).includes("restaurado");
 }
 
 function isInSelectedMonth(item: Transaction, filters: Filters) {
@@ -988,6 +993,10 @@ function withForecastPaidMarker(notes: string) {
 
 function displayNotes(notes: string) {
   return notes.replace("[pago-da-previsao]", "").trim();
+}
+
+function normalizeText(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
 function recurringKey(item: Transaction) {
